@@ -1,0 +1,13 @@
+[Unit]
+Description=shandian_status_server Service
+After=network.target
+Wants=network.target
+
+[Service]
+Restart=always
+RestartSec=10
+ExecStart=/usr/local/shandian_status_server/server
+User=root
+
+[Install]
+WantedBy=multi-user.target
