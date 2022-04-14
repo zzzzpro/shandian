@@ -8,7 +8,7 @@ bash <(curl -Ls https://raw.githubusercontent.com/zzzzpro/shandian/master/client
 
 ## 服务端安装
 ```
-bash <(curl -Ls https://raw.githubusercontent.com/zzzzpro/shandian/master/server/install.sh)
+
 ```
 
 宝塔面板用户需反代http://localhost:5000 及ws
