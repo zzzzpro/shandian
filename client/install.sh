@@ -89,7 +89,7 @@ install_client(){
     #if [[ -e /usr/local/shandian_status/ ]]; then
     #  rm /usr/local/shandian_status/ -rf
     #fi
-    systemctl stop shandian_status_server
+    systemctl stop shandian_status
     tar zxvf shandian_status-${arch}.tar.gz
     rm shandian_status-${arch}.tar.gz -f
     cd shandian_status
