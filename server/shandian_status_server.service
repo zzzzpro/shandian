@@ -6,6 +6,7 @@ Wants=network.target
 [Service]
 Restart=always
 RestartSec=10
+WorkingDirectory=/usr/local/shandian_status_server
 ExecStart=/usr/local/shandian_status_server/server
 User=root
 

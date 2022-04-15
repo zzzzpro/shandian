@@ -85,12 +85,12 @@ install_client(){
     tar zxvf shandian_status_server-${arch}.tar.gz
     rm shandian_status_server-${arch}.tar.gz -f
     cd shandian_status_server
-    chmod +x client
+    chmod +x server
     cp -f shandian_status_server.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable shandian_status_server
     systemctl start shandian_status_server
-    echo -e "${green}闪电监控服务端{plain} 安装成功${plain}"
+    echo -e "${green} 闪电监控服务端 安装成功${plain}"
 }
 echo -e "${green}开始安装${plain}"
 install_base

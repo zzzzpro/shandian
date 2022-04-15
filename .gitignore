@@ -2,3 +2,4 @@
 /client/obj
 /client/Client.csproj.user
 /client/Properties/PublishProfiles
+/web/.env*

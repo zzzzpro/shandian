@@ -27,28 +27,34 @@ namespace Client
 
         private static void Main(string[] args)
         {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Platform = "linux";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Platform = "windows";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) Platform = "osx";
+            var configPath = "";
+            if (Platform == "linux")
+            {
+                configPath = "/usr/local/shandian_status/config";
+            }
             if (args.Length != 0)
             {
                 config.ServerUrl = args[0];
                 config.Uuid = Guid.NewGuid().ToString("N");
-                File.WriteAllText(Path.Combine(Directory.GetCurrentDirectory(), "config"),
+                File.WriteAllText(configPath,
                     JsonConvert.SerializeObject(config));
                 return;
             }
+          
 
-            if (!File.Exists("config")) return;
-
+            if (!File.Exists(configPath)) return;
             config = JsonConvert.DeserializeObject<Config>(
-                File.ReadAllText(Path.Combine(Directory.GetCurrentDirectory(), "config")));
+                File.ReadAllText(configPath));
             Console.WriteLine(JsonConvert.SerializeObject(config));
             //Version = Assembly.GetEntryAssembly().GetName().Version.ToString();
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Platform = "linux";
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Platform = "windows";
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) Platform = "osx";
+            config.ServerUrl = $"{config.ServerUrl}/ws/client";
             GetHost();
             host.V = Version;
 
-            SignalRClient.Instance.Init();
+            SignalRClient.Instance.InitializeConnection();
             Task.Factory.StartNew(GetStatus);
             //通知线程
             Task.Factory.StartNew(Report);
@@ -254,49 +260,44 @@ namespace Client
 
         private class SignalRClient
         {
-            private HubConnection Conn;
+            private HubConnection _hubConnection;
 
-            private bool isconnect;
             internal static SignalRClient Instance { get; } = new SignalRClient();
 
-            internal void Init()
+            public void InitializeConnection()
             {
-                Conn = new HubConnectionBuilder().WithUrl(config.ServerUrl).WithAutomaticReconnect().Build();
-                Connect();
-                //连接断开的监控
-                Conn.Closed += Conn_Closed;
+                if (_hubConnection != null)
+                {
+                    _hubConnection.Closed -= OnDisconnected;
+                }
+                _hubConnection = new HubConnectionBuilder().WithUrl(config.ServerUrl).WithAutomaticReconnect().Build();
+                _hubConnection.Closed += OnDisconnected;
+                ConnectWithRetry();
             }
 
-            internal void Report(Status status)
+            private Task OnDisconnected(Exception arg)
             {
-                Conn?.InvokeAsync("Report", config.Uuid, status).Wait();
-            }
-
-            private Task Conn_Closed(Exception arg)
-            {
-                Connect();
+                Thread.Sleep(5000);
+                InitializeConnection();
                 return Task.CompletedTask;
             }
-
-            private void Connect()
+            private void ConnectWithRetry()
             {
-                if (isconnect) return;
-                while (true)
-                    try
+                var t = _hubConnection.StartAsync();
+
+                t.ContinueWith(task =>
+                {
+                    if (!task.IsFaulted)
                     {
-                        if (Conn.State == HubConnectionState.Connected) break;
-                        isconnect = true;
-                        Conn.StartAsync().Wait();
-                        Conn.InvokeAsync("Register", config.Uuid, host).Wait();
-                        isconnect = false;
-                        break;
+                        _hubConnection?.InvokeAsync("Register", config.Uuid, host).Wait();
                     }
-                    catch (Exception ex)
-                    {
-                        while (ex.InnerException != null) ex = ex.InnerException;
-                        Thread.Sleep(5000);
-                    }
+                }).Wait();
             }
+            internal void Report(Status status)
+            {
+                _hubConnection?.InvokeAsync("Report", config.Uuid, status).Wait();
+            }
+
         }
 
         #region Model

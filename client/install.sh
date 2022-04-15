@@ -86,9 +86,10 @@ install_client(){
     fi
     cd /usr/local
     #开始解压
-    if [[ -e /usr/local/shandian_status/ ]]; then
-      rm /usr/local/shandian_status/ -rf
-    fi
+    #if [[ -e /usr/local/shandian_status/ ]]; then
+    #  rm /usr/local/shandian_status/ -rf
+    #fi
+    systemctl stop shandian_status_server
     tar zxvf shandian_status-${arch}.tar.gz
     rm shandian_status-${arch}.tar.gz -f
     cd shandian_status
@@ -98,7 +99,7 @@ install_client(){
     systemctl daemon-reload
     systemctl enable shandian_status
     systemctl start shandian_status
-    echo -e "${green}闪电监控{plain} 安装成功${plain}"
+    echo -e "${green}闪电监控 安装成功${plain}"
 }
 echo -e "${green}开始安装${plain}"
 install_base
