@@ -21,6 +21,8 @@ location /ws {proxy_redirect off;proxy_intercept_errors on;proxy_pass http://127
 ```
 
 ## 演示站点 http://140.238.16.23:9999/ 
+后台登录：http://140.238.16.23:9999/#/login 
+默认用户名密码 admin admin
 ## 不定时更新
 ## todo
 1.在线率统计
