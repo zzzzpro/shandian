@@ -27,10 +27,16 @@ jobs:
 
     - name: Build and Publish for Linux-arm64
       run: cd client && dotnet publish -c Release -r linux-arm64 -p:PublishSingleFile=true -o ./publish/linux-arm64
+     
+    - name: Remove .pdb files
+      run: find ./Client/publish -name '*.pdb' -delete
 
+    - name: Rename Client to client
+      run: mv Client client
+      
     - name: Get current date
       id: date
-      run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"  # 获取当前时间并设置为步骤输出。
+      run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"  
 
     - name: Create tar.gz for Linux-x64
       run: tar -czvf ./client/publish/shandian_status-amd64.tar.gz -C ./client/publish/linux-x64 .
@@ -42,10 +48,10 @@ jobs:
       id: create_release
       uses: actions/create-release@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 自动提供的GitHub token。
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  
       with:
-        tag_name: release-${{ steps.date.outputs.date }}  # 使用日期作为标签名。
-        release_name: Release-${{ steps.date.outputs.date }}  # 创建的Release名称也包含日期。
+        tag_name: release-${{ steps.date.outputs.date }} 
+        release_name: Release-${{ steps.date.outputs.date }} 
         draft: false
         prerelease: false
         body: "Description of the release"
@@ -56,9 +62,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}  
-        asset_path: ./client/publish/shandian_status-amd64.tar.gz  # 修改为你的构建输出路径和文件。
-        asset_name: shandian_status-amd64.tar.gz  # 文件名包含时间戳。
-        asset_content_type: application/gzip  # 成品的内容类型。
+        asset_path: ./client/publish/shandian_status-amd64.tar.gz 
+        asset_name: shandian_status-amd64.tar.gz  
+        asset_content_type: application/gzip  
 
     - name: Upload Release Asset for Linux-arm64
       uses: actions/upload-release-asset@v1
@@ -66,6 +72,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}  
-        asset_path: ./client/publish/shandian_status-arm64.tar.gz  # 修改为你的构建输出路径和文件。
-        asset_name: shandian_status-arm64.tar.gz  # 文件名包含时间戳。
-        asset_content_type: application/gzip  # 成品的内容类型。
+        asset_path: ./client/publish/shandian_status-arm64.tar.gz 
+        asset_name: shandian_status-arm64.tar.gz  
+        asset_content_type: application/gzip 
