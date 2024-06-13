@@ -17,26 +17,26 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: '8.0.x'
+        dotnet-version: '6.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: cd client && dotnet restore
 
     - name: Build and Publish for Linux-x64
-      run: dotnet publish -c Release -r linux-x64 -p:PublishSingleFile=true -o ./publish/linux-x64
+      run: cd client && dotnet publish -c Release -r linux-x64 -p:PublishSingleFile=true -o ./publish/linux-x64
 
     - name: Build and Publish for Linux-arm64
-      run: dotnet publish -c Release -r linux-arm64 -p:PublishSingleFile=true -o ./publish/linux-arm64
+      run: cd client && dotnet publish -c Release -r linux-arm64 -p:PublishSingleFile=true -o ./publish/linux-arm64
 
     - name: Get current date
       id: date
       run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"  # 获取当前时间并设置为步骤输出。
 
     - name: Create tar.gz for Linux-x64
-      run: tar -czvf ./publish/Client-linux-x64-${{ steps.date.outputs.date }}.tar.gz -C ./publish/linux-x64 .
+      run: tar -czvf ./client/publish/Client-linux-x64-${{ steps.date.outputs.date }}.tar.gz -C ./client/publish/linux-x64 .
 
     - name: Create tar.gz for Linux-arm64
-      run: tar -czvf ./publish/Client-linux-arm64-${{ steps.date.outputs.date }}.tar.gz -C ./publish/linux-arm64 .
+      run: tar -czvf ./client/publish/Client-linux-arm64-${{ steps.date.outputs.date }}.tar.gz -C ./client/publish/linux-arm64 .
 
     - name: Create Release
       id: create_release
@@ -56,7 +56,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}  
-        asset_path: ./publish/Client-linux-x64-${{ steps.date.outputs.date }}.tar.gz  # 修改为你的构建输出路径和文件。
+        asset_path: ./client/publish/Client-linux-x64-${{ steps.date.outputs.date }}.tar.gz  # 修改为你的构建输出路径和文件。
         asset_name: Client-linux-x64-${{ steps.date.outputs.date }}.tar.gz  # 文件名包含时间戳。
         asset_content_type: application/gzip  # 成品的内容类型。
 
@@ -66,6 +66,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}  
-        asset_path: ./publish/Client-linux-arm64-${{ steps.date.outputs.date }}.tar.gz  # 修改为你的构建输出路径和文件。
+        asset_path: ./client/publish/Client-linux-arm64-${{ steps.date.outputs.date }}.tar.gz  # 修改为你的构建输出路径和文件。
         asset_name: Client-linux-arm64-${{ steps.date.outputs.date }}.tar.gz  # 文件名包含时间戳。
         asset_content_type: application/gzip  # 成品的内容类型。
