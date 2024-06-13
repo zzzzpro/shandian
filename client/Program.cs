@@ -27,6 +27,7 @@ namespace Client
 
         private static Process bashProcess;
         private static StreamReader bashOutput;
+        private static StreamWriter bashInput;
 
         private static void Main(string[] args)
         {
@@ -70,30 +71,43 @@ namespace Client
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = "/bin/bash",
-                    Arguments = "-c \"\"",
                     RedirectStandardOutput = true,
                     RedirectStandardInput = true,
+                    RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 }
             };
             bashProcess.Start();
             bashOutput = bashProcess.StandardOutput;
+            bashInput = bashProcess.StandardInput;
         }
 
-        private static string Bash(string cmd)
+        public static string Bash(string cmd)
         {
-            bashProcess.StandardInput.WriteLine(cmd);
-            bashProcess.StandardInput.Flush();
-            bashProcess.StandardInput.WriteLine("echo EndOfCommand");
-            bashProcess.StandardInput.Flush();
-            string result = "";
-            string line;
-            while ((line = bashOutput.ReadLine()) != null && line != "EndOfCommand")
+            try
             {
-                result += line + "\n";
+                bashInput.WriteLine(cmd);
+                bashInput.Flush();
+                bashInput.WriteLine("echo EndOfCommand");
+                bashInput.Flush();
+
+                string result = "";
+                string line;
+                while ((line = bashOutput.ReadLine()) != null)
+                {
+                    if (line == "EndOfCommand")
+                        break;
+                    result += line + "\n";
+                }
+
+                return result;
             }
-            return result;
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Exception while running bash command: {ex.Message}");
+                throw;
+            }
         }
 
         private static void GetHost()
