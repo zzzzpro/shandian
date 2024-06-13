@@ -196,7 +196,7 @@ namespace Client
                 //不上报ip了。 由服务端获取。
                 try
                 {
-                    host.Ip = new WebClient().DownloadString("https://api.ip.sb/ip").TrimEnd('\n');
+                    host.Ip = new WebClient().DownloadString("https://api-ipv4.ip.sb/ip").TrimEnd('\n');
                 }
                 catch (Exception e)
                 {
