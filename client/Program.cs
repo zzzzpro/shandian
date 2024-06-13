@@ -53,11 +53,9 @@ namespace Client
             Console.WriteLine(JsonConvert.SerializeObject(config));
             //Version = Assembly.GetEntryAssembly().GetName().Version.ToString();
             config.ServerUrl = $"{config.ServerUrl}/ws/client";
+            InitializeBashProcess();
             GetHost();
             host.V = Version;
-
-            InitializeBashProcess();
-
             SignalRClient.Instance.InitializeConnection();
             Task.Factory.StartNew(GetStatus);
             //通知线程
