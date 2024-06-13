@@ -3,3 +3,4 @@
 /client/Client.csproj.user
 /client/Properties/PublishProfiles
 /web/.env*
+*.vsidx
