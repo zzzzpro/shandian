@@ -29,10 +29,7 @@ jobs:
       run: cd client && dotnet publish -c Release -r linux-arm64 -p:PublishSingleFile=true -o ./publish/linux-arm64
      
     - name: Remove .pdb files
-      run: find ./Client/publish -name '*.pdb' -delete
-
-    - name: Rename Client to client
-      run: mv Client client
+      run: find ./publish -name '*.pdb' -delete
       
     - name: Get current date
       id: date
