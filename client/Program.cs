@@ -25,6 +25,9 @@ namespace Client
 
         private static string NetName = "";
 
+        private static Process bashProcess;
+        private static StreamReader bashOutput;
+
         private static void Main(string[] args)
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Platform = "linux";
@@ -43,7 +46,6 @@ namespace Client
                     JsonConvert.SerializeObject(config));
                 return;
             }
-          
 
             if (!File.Exists(configPath)) return;
             config = JsonConvert.DeserializeObject<Config>(
@@ -54,11 +56,46 @@ namespace Client
             GetHost();
             host.V = Version;
 
+            InitializeBashProcess();
+
             SignalRClient.Instance.InitializeConnection();
             Task.Factory.StartNew(GetStatus);
             //通知线程
             Task.Factory.StartNew(Report);
             new AutoResetEvent(false).WaitOne();
+        }
+
+        private static void InitializeBashProcess()
+        {
+            bashProcess = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    Arguments = "-c \"\"",
+                    RedirectStandardOutput = true,
+                    RedirectStandardInput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            bashProcess.Start();
+            bashOutput = bashProcess.StandardOutput;
+        }
+
+        private static string Bash(string cmd)
+        {
+            bashProcess.StandardInput.WriteLine(cmd);
+            bashProcess.StandardInput.Flush();
+            bashProcess.StandardInput.WriteLine("echo EndOfCommand");
+            bashProcess.StandardInput.Flush();
+            string result = "";
+            string line;
+            while ((line = bashOutput.ReadLine()) != null && line != "EndOfCommand")
+            {
+                result += line + "\n";
+            }
+            return result;
         }
 
         private static void GetHost()
@@ -79,7 +116,6 @@ namespace Client
         {
             //获取网卡
         }
-
 
         private static void Report()
         {
@@ -103,7 +139,6 @@ namespace Client
             }
         }
 
-
         private static void GetHostLinux()
         {
             //获取网卡
@@ -111,7 +146,7 @@ namespace Client
                 Bash("cat /proc/net/dev | awk '{if($2>0 && NR > 2) print substr($1, 0, index($1, \":\"))}'");
 
             //Console.WriteLine(tempeth);
-            var eths = tempeth.Split(new[] {'\n'}, StringSplitOptions.RemoveEmptyEntries).ToList();
+            var eths = tempeth.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
             var listRemove = new List<string>();
             foreach (var item in ExcludeNetInterfaces)
                 for (var i = 0; i < eths.Count; i++)
@@ -136,7 +171,7 @@ namespace Client
             var result = Bash(cmd);
             if (!string.IsNullOrEmpty(result))
             {
-                var temp = result.Split(new[] {'\n'});
+                var temp = result.Split(new[] { '\n' });
                 host.Cpu = temp[0].Trim() + " X" + temp[1];
                 if (string.IsNullOrEmpty(temp[0].Trim())) //可能取不到cpu信息
                     host.Cpu = "X" + temp[1];
@@ -197,7 +232,7 @@ namespace Client
                     if (!string.IsNullOrEmpty(result))
                         try
                         {
-                            var temp = result.Split(new[] {'\n'}, StringSplitOptions.RemoveEmptyEntries);
+                            var temp = result.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
                             status.DiskUsed = double.Parse(temp[4]);
                             var load = temp[5].Split(',');
                             status.Load1 = double.Parse(load[0].Trim());
@@ -237,27 +272,6 @@ namespace Client
             } while (true);
         }
 
-        private static string Bash(string cmd)
-        {
-            var escapedArgs = cmd.Replace("\"", "\\\"");
-
-            var process = new Process
-            {
-                StartInfo = new ProcessStartInfo
-                {
-                    FileName = "/bin/bash",
-                    Arguments = $"-c \"{escapedArgs}\"",
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-            process.Start();
-            var result = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-            return result;
-        }
-
         private class SignalRClient
         {
             private HubConnection _hubConnection;
@@ -275,12 +289,11 @@ namespace Client
                 ConnectWithRetry();
             }
 
-            private Task OnDisconnected(Exception arg)
+            private async Task OnDisconnected(Exception arg)
             {
-                Thread.Sleep(5000);
-                InitializeConnection();
-                return Task.CompletedTask;
+                Environment.Exit(1);
             }
+
             private void ConnectWithRetry()
             {
                 var t = _hubConnection.StartAsync();
@@ -293,6 +306,7 @@ namespace Client
                     }
                 }).Wait();
             }
+
             internal void Report(Status status)
             {
                 _hubConnection?.InvokeAsync("Report", config.Uuid, status).Wait();
