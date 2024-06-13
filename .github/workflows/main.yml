@@ -28,9 +28,6 @@ jobs:
     - name: Build and Publish for Linux-arm64
       run: cd client && dotnet publish -c Release -r linux-arm64 -p:PublishSingleFile=true -o ./publish/linux-arm64
      
-    - name: Remove .pdb files
-      run: find ./publish -name '*.pdb' -delete
-      
     - name: Get current date
       id: date
       run: echo "::set-output name=date::$(date +'%Y%m%d%H%M%S')"  
