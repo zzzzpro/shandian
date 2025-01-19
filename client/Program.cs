@@ -178,7 +178,7 @@ namespace Client
                 + "free -m | awk '/Swap/ {print $2}';" //swap大小
                 + "awk '{print $1}' /proc/uptime;" //开机时间
                 + "uname -m;" //arch
-                + "LANG=C; lsblk -b -d -n -o SIZE,TYPE | awk '$2 == "disk" { total += $1 } END { print int(total / 1024) }';" //硬盘大小";
+                + "LANG=C; lsblk -b -d -n -o SIZE,TYPE | awk '$2 == \"disk\" { total += $1 } END { print int(total / 1024) }';" //硬盘大小";
                 + "([ -f /etc/redhat-release ] && awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release)||([ -f /etc/os-release ] && awk -F'[= \"]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release)||([ -f /etc/lsb-release ] && awk -F'[=\"]+' '/DESCRIPTION/{print $2}' /etc/lsb-release);";
             var result = Bash(cmd);
             if (!string.IsNullOrEmpty(result))
