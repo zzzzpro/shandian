@@ -236,9 +236,9 @@ namespace Client
                             + "free -m | awk '/Mem/ {print $3}';"
                             + "free -m | awk '/Swap/ {print $3}';"
                             + "awk '{print $1}' /proc/uptime;"
-                            + "LANG=C; df -t simfs -t ext2 -t ext3 -t ext4 -t btrfs -t xfs -t vfat -t ntfs -t swap --total 2>/dev/null | grep total | awk '{ print $3 }';"
+                            + "LANG=C; df -k --total -x tmpfs -x devtmpfs -x squashfs -x overlay -x aufs -x simfs 2>/dev/null | awk '/^total/ { print $3 }'"
                             + "LANG=C; w | head -1 | awk -F'load average:' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//';"
-                            + "grep \"cpu\" /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}';";
+                            + "prev=$(grep 'cpu ' /proc/stat); sleep 1; curr=$(grep 'cpu ' /proc/stat); awk -v pre="$prev" -v cur="$curr" 'BEGIN {split(pre, a); split(cur, b); prev_idle=a[5]; prev_total=a[2]+a[3]+a[4]+a[5]; idle=b[5]; total=b[2]+b[3]+b[4]+b[5]; print 1 - (idle-prev_idle)/(total-prev_total)}'";
                     var result = Bash(cmd);
                     //Console.WriteLine(result);
                     if (!string.IsNullOrEmpty(result))
