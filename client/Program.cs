@@ -178,7 +178,7 @@ namespace Client
                 + "free -m | awk '/Swap/ {print $2}';" //swap大小
                 + "awk '{print $1}' /proc/uptime;" //开机时间
                 + "uname -m;" //arch
-                + "LANG=C; lsblk -b -d -n -o SIZE,TYPE | awk '$2 == \"disk\" { total += $1 } END { print int(total / 1024) }';" //硬盘大小";
+                + "LANG=C; df -t simfs -t ext2 -t ext3 -t ext4 -t btrfs -t xfs -t vfat -t ntfs -t swap --total 2>/dev/null | grep total | awk '{ print $2 }';" //硬盘大小";
                 + "([ -f /etc/redhat-release ] && awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release)||([ -f /etc/os-release ] && awk -F'[= \"]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release)||([ -f /etc/lsb-release ] && awk -F'[=\"]+' '/DESCRIPTION/{print $2}' /etc/lsb-release);";
             var result = Bash(cmd);
             if (!string.IsNullOrEmpty(result))
@@ -236,7 +236,7 @@ namespace Client
                             + "free -m | awk '/Mem/ {print $3}';"
                             + "free -m | awk '/Swap/ {print $3}';"
                             + "awk '{print $1}' /proc/uptime;"
-                            + "LANG=C; df -k --total -x tmpfs -x devtmpfs -x squashfs -x overlay -x aufs -x simfs 2>/dev/null | awk '/^total/ { print $3 }'"
+                            + "LANG=C; df -t simfs -t ext2 -t ext3 -t ext4 -t btrfs -t xfs -t vfat -t ntfs -t swap --total 2>/dev/null | grep total | awk '{ print $3 }';"
                             + "LANG=C; w | head -1 | awk -F'load average:' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//';"
                             + "grep \"cpu\" /proc/stat | awk '{usage=($2+$4)*100/($2+$4+$5)} END {print usage}';";
                     var result = Bash(cmd);
