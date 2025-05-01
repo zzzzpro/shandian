@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -514,13 +513,7 @@ namespace Client
 
             while (!_appCts.IsCancellationRequested)
             {
-                DateTime currentDateTime = DateTime.Now.ToUniversalTime();
-                // Update status.UpdateTime *before* the delay for the next iteration's calculation
-                status.UpdateTime = DateTime.Now.ToUniversalTime();
-                TimeSpan diff = currentDateTime - status.UpdateTime; // This diff calculation might be slightly off if status.UpdateTime wasn't updated precisely before the *previous* delay
-                double diffSeconds = diff.TotalSeconds;
-                if (diffSeconds <= 0) diffSeconds = 1; // Prevent division by zero, assume at least 1 second passed if time hasn't moved forward (rare)
-
+         
                 try
                 {
                     switch (Platform)
@@ -541,11 +534,9 @@ namespace Client
                     // After gathering status (synchronously), update the status object
 
                     status.Uuid = config.Uuid; // Ensure Uuid is always set in status
-                                               // status.UpdateTime is updated above the loop for the next iteration
-                                               // status.V = Version; // TODO: Populate version
-
-                    // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Status updated."); // Verbose log
-                    // Console.WriteLine($"DEBUG Status: CPU={status.CpuUsed:F2}%, MemUsed={status.MemUsed}MB, NetInSpeed={status.NetInSpeed/1024:F2}KB/s, Uptime={status.Uptime:F0}s"); // Debug status values
+                    status.UpdateTime = DateTime.Now.ToUniversalTime();
+                                               // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Status updated."); // Verbose log
+                                               // Console.WriteLine($"DEBUG Status: CPU={status.CpuUsed:F2}%, MemUsed={status.MemUsed}MB, NetInSpeed={status.NetInSpeed/1024:F2}KB/s, Uptime={status.Uptime:F0}s"); // Debug status values
 
                 }
                 catch (TaskCanceledException)
@@ -705,6 +696,8 @@ namespace Client
                 status.Load1 = status.Load5 = status.Load15 = 0;
                 // Keep existing NetInTransfer/OutTransfer and Uptime as they are cumulative and might retain last valid value
             }
+
+         
         }
 
         private static void GetHostLinux()
@@ -785,10 +778,10 @@ namespace Client
                     Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Fetching public IP..."); // Detailed log
                     try
                     {
-                        using (var client = new HttpClient())
+                        using (var client = new WebClient())
                         {
-                           
-                            host.Ip = client.GetStringAsync("https://api-ipv4.ip.sb/ip").GetAwaiter().GetResult().TrimEnd('\n', '\r').Trim();
+                            client.Timeout = 5000; // 5 seconds timeout
+                            host.Ip = client.DownloadString("https://api-ipv4.ip.sb/ip").TrimEnd('\n', '\r').Trim();
                             Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Public IP fetched: {host.Ip}"); // Detailed log
                         }
                     }
