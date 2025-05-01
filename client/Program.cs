@@ -151,58 +151,230 @@ namespace Client
             }
         }
 
-        private static void GetHostLinux()
+       private static void GetStatusLinux()
+{
+    DateTime lastDateTime = DateTime.Now.ToUniversalTime();
+    // NetInTransfer and NetOutTransfer are now class members for difference calculation
+
+    // Initialize last transfer values on first run - Keep this to get initial network cumulative bytes
+    string initialNetCmd = $"cat /proc/net/dev | grep \"{NetName}\" | sed 's/:/ /g' | awk '{{print $2,$10}}';";
+    var initialNetResult = Bash(initialNetCmd);
+    if (!string.IsNullOrEmpty(initialNetResult))
+    {
+         try
+         {
+             var net = initialNetResult.Trim().Split(' ');
+             if (net.Length == 2)
+             {
+                 if (double.TryParse(net[0], out double initialNetIn)) status.NetInTransfer = initialNetIn;
+                 if (double.TryParse(net[1], out double initialNetOut)) status.NetOutTransfer = initialNetOut;
+                 // Console.WriteLine($"Initialized network transfers: In={status.NetInTransfer}, Out={status.NetOutTransfer}"); // Optional log
+             }
+             else
+             {
+                  Console.Error.WriteLine($"Unexpected initial netstat format: {initialNetResult}");
+             }
+         }
+         catch (Exception ex)
+         {
+             Console.Error.WriteLine($"Error parsing initial netstat: {ex.Message}");
+         }
+    }
+     else
+    {
+         Console.Error.WriteLine("Warning: Failed to get initial network stats. Net speed will be 0 initially.");
+         status.NetInTransfer = 0; // Ensure they are zero if command fails
+         status.NetOutTransfer = 0;
+    }
+
+    // lastCpuTotalTime and lastCpuIdleTime are class members, implicitly initialized to 0.
+    // We rely on the calculation logic inside the loop to handle the first iteration where they are 0.
+    // No need for a separate initial CPU query here.
+
+
+    // Main status polling loop
+    do
+    {
+        DateTime currentDateTime = DateTime.Now.ToUniversalTime();
+        TimeSpan diff = currentDateTime - lastDateTime;
+        double diffSeconds = diff.TotalSeconds;
+
+        // Combine all status commands into one bash call
+        // CPU stats command is now included directly in the main loop's command string
+        var cmd =
+             "grep \"cpu \" /proc/stat | awk '{total=0; for(i=2;i<=NF;i++){total+=$i}; print total, $5}';" + // 0: Total CPU time, Idle CPU time
+            $"cat /proc/net/dev | grep \"{NetName}\" | sed 's/:/ /g' | awk '{{print $2,$10}}';" + // 1: Net RX bytes, Net TX bytes
+            "free -m | awk '/Mem/ {print $3}';" + // 2: Mem Used (MB)
+            "free -m | awk '/Swap/ {print $3}';" + // 3: Swap Used (MB)
+            "awk '{print $1}' /proc/uptime;" + // 4: Uptime (seconds)
+             // Adjusted df command to be more robust and specifically grep 'total' line only
+            "LANG=C; df -P -t simfs -t ext2 -t ext3 -t ext4 -t btrfs -t xfs -t vfat -t ntfs --total 2>/dev/null | grep '^total' | awk '{ print $3 }';" + // 5: Disk Used (1k blocks)
+            "LANG=C; w | head -1 | awk -F'load average:' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//';"; // 6: Load Averages (1m, 5m, 15m)
+
+        var result = Bash(cmd);
+        //Console.WriteLine($"DEBUG: Bash result:\n{result}"); // Debugging result
+
+        if (!string.IsNullOrEmpty(result))
         {
-            //获取网卡
-            var tempeth =
-                Bash("cat /proc/net/dev | awk '{if($2>0 && NR > 2) print substr($1, 0, index($1, \":\"))}'");
+            var temp = result.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries); // Use RemoveEmptyEntries
 
-            //Console.WriteLine(tempeth);
-            var eths = tempeth.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
-            var listRemove = new List<string>();
-            foreach (var item in ExcludeNetInterfaces)
-                for (var i = 0; i < eths.Count; i++)
-                    if (eths[i].StartsWith(item))
-                        if (!listRemove.Contains(eths[i]))
-                            listRemove.Add(eths[i]);
-
-            foreach (var v in listRemove) eths.Remove(v);
-            NetName = eths.FirstOrDefault().Trim(':'); //netName;
-
-            // Console.WriteLine(config.NetName);
-            var cmd =
-                "awk -F: '/model name/ {name=$2} END {print name}' /proc/cpuinfo | sed 's/^[ \t]*//;s/[ \t]*$//';" //cpu型号
-                + "awk -F: '/processor/ {core++} END {print core}' /proc/cpuinfo;" //cpu核心数
-                + "awk -F: '/cpu MHz/ {freq=$2} END {print freq}' /proc/cpuinfo | sed 's/^[ \t]*//;s/[ \t]*$//';" //cpu频率
-                + "free -m | awk '/Mem/ {print $2}';" //内存大小
-                + "free -m | awk '/Swap/ {print $2}';" //swap大小
-                + "awk '{print $1}' /proc/uptime;" //开机时间
-                + "uname -m;" //arch
-                + "LANG=C; df -t simfs -t ext2 -t ext3 -t ext4 -t btrfs -t xfs -t vfat -t ntfs -t swap --total 2>/dev/null | grep total | awk '{ print $2 }';" //硬盘大小";
-                + "([ -f /etc/redhat-release ] && awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release)||([ -f /etc/os-release ] && awk -F'[= \"]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release)||([ -f /etc/lsb-release ] && awk -F'[=\"]+' '/DESCRIPTION/{print $2}' /etc/lsb-release);";
-            var result = Bash(cmd);
-            if (!string.IsNullOrEmpty(result))
+            try
             {
-                var temp = result.Split(new[] { '\n' });
-                host.Cpu = temp[0].Trim() + " X" + temp[1];
-                if (string.IsNullOrEmpty(temp[0].Trim())) //可能取不到cpu信息
-                    host.Cpu = "X" + temp[1];
-                host.MemTotal = double.Parse(temp[3]);
-                host.SwapTotal = double.Parse(temp[4]);
-                host.BootTime = double.Parse(temp[5]);
-                host.Arch = temp[6];
-                host.DiskTotal = double.Parse(temp[7]);
-                host.Platform = temp[8];
-                //不上报ip了。 由服务端获取。
-                try
+                 // Parse results based on the order of commands
+
+                 // 0: CPU Stats - Calculation happens here based on current vs last values
+                 var cpuStatsLine = temp.ElementAtOrDefault(0)?.Trim();
+                 if (!string.IsNullOrEmpty(cpuStatsLine))
+                 {
+                    var cpuTimes = cpuStatsLine.Split(' ');
+                    if (cpuTimes.Length == 2 && double.TryParse(cpuTimes[0], out double currentCpuTotalTime) && double.TryParse(cpuTimes[1], out double currentCpuIdleTime))
+                     {
+                        // Calculate usage ONLY if we have previous data points and time has passed
+                        if (lastCpuTotalTime > 0 && diffSeconds > 0)
+                         {
+                             double diffTotal = currentCpuTotalTime - lastCpuTotalTime;
+                             double diffIdle = currentCpuIdleTime - lastCpuIdleTime;
+
+                             if (diffTotal > 0)
+                             {
+                                 status.CpuUsed = ((diffTotal - diffIdle) / diffTotal) * 100.0;
+                             }
+                             else
+                             {
+                                 status.CpuUsed = 0; // Avoid division by zero if diffTotal is 0
+                             }
+                         }
+                         else
+                         {
+                              // First iteration or no time passed, CPU usage remains 0 (its default)
+                              status.CpuUsed = 0; // Explicitly set to 0 for clarity on first run/no diff
+                         }
+
+                         // ALWAYS update last values for the *next* iteration
+                         lastCpuTotalTime = currentCpuTotalTime;
+                         lastCpuIdleTime = currentCpuIdleTime;
+                     }
+                     else
+                     {
+                         Console.Error.WriteLine($"Warning: Could not parse current CPU stats: {cpuStatsLine}");
+                         status.CpuUsed = 0; // Set to 0 if parsing fails
+                     }
+                 }
+                 else
+                 {
+                     Console.Error.WriteLine($"Warning: Could not get CPU stats.");
+                     status.CpuUsed = 0; // Set to 0 if command output is empty
+                 }
+
+
+                 // 1: Network Stats - Calculation happens here based on current vs last values
+                var netStatsLine = temp.ElementAtOrDefault(1)?.Trim();
+                if (!string.IsNullOrEmpty(netStatsLine))
                 {
-                    host.Ip = new WebClient().DownloadString("https://api-ipv4.ip.sb/ip").TrimEnd('\n');
+                    var net = netStatsLine.Split(' ');
+                    if (net.Length == 2 && double.TryParse(net[0], out double currentNetInTransfer) && double.TryParse(net[1], out double currentNetOutTransfer))
+                    {
+                        // Calculate speed ONLY if we have previous data points (initialized before loop) and time has passed
+                        if ((status.NetInTransfer > 0 || status.NetOutTransfer > 0) && diffSeconds > 0) // Check if initial values were set (simple check)
+                        {
+                             // Calculate speed in Bytes/second
+                            status.NetInSpeed = (currentNetInTransfer - status.NetInTransfer) / diffSeconds;
+                            status.NetOutSpeed = (currentNetOutTransfer - status.NetOutTransfer) / diffSeconds;
+                        }
+                        else
+                        {
+                             // First iteration or no time passed, speed is 0
+                            status.NetInSpeed = 0;
+                            status.NetOutSpeed = 0;
+                        }
+                         // ALWAYS update last transfer values for the *next* iteration
+                         status.NetInTransfer = currentNetInTransfer;
+                         status.NetOutTransfer = currentNetOutTransfer;
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine($"Warning: Could not parse network stats: {netStatsLine}");
+                         status.NetInSpeed = 0; status.NetOutSpeed = 0; // Set to 0 if parsing fails
+                    }
                 }
-                catch (Exception e)
+                else
                 {
+                     Console.Error.WriteLine($"Warning: Could not get network stats (NetName: {NetName}).");
+                     status.NetInSpeed = 0;
+                     status.NetOutSpeed = 0;
                 }
+
+
+                 // 2: Mem Used
+                 if (double.TryParse(temp.ElementAtOrDefault(2), out double memUsed)) status.MemUsed = memUsed;
+                 else { Console.Error.WriteLine($"Warning: Could not parse Mem Used: {temp.ElementAtOrDefault(2)}"); status.MemUsed = 0; }
+
+
+                 // 3: Swap Used
+                 if (double.TryParse(temp.ElementAtOrDefault(3), out double swapUsed)) status.SwapUsed = swapUsed;
+                 else { Console.Error.WriteLine($"Warning: Could not parse Swap Used: {temp.ElementAtOrDefault(3)}"); status.SwapUsed = 0; }
+
+
+                 // 4: Uptime
+                 if (double.TryParse(temp.ElementAtOrDefault(4), out double uptime)) status.Uptime = uptime;
+                 else { Console.Error.WriteLine($"Warning: Could not parse Uptime: {temp.ElementAtOrDefault(4)}"); status.Uptime = 0; }
+
+
+                 // 5: Disk Used (convert 1k blocks to MB)
+                 if (double.TryParse(temp.ElementAtOrDefault(5), out double diskUsedBlocks)) status.DiskUsed = diskUsedBlocks / 1024.0;
+                 else { Console.Error.WriteLine($"Warning: Could not parse Disk Used: {temp.ElementOrDefault(5)}"); status.DiskUsed = 0; }
+
+
+                 // 6: Load Averages
+                var loadLine = temp.ElementAtOrDefault(6)?.Trim();
+                 if (!string.IsNullOrEmpty(loadLine))
+                 {
+                     var load = loadLine.Split(',');
+                     if (load.Length >= 3) // Ensure there are at least 3 values
+                     {
+                         if (!double.TryParse(load[0].Trim(), out status.Load1)) status.Load1 = 0;
+                         if (!double.TryParse(load[1].Trim(), out status.Load5)) status.Load5 = 0;
+                         if (!double.TryParse(load[2].Trim(), out status.Load15)) status.Load15 = 0;
+                     }
+                     else
+                     {
+                         Console.Error.WriteLine($"Warning: Unexpected load average format: {loadLine}");
+                          status.Load1 = status.Load5 = status.Load15 = 0; // Set to 0 if format is wrong
+                     }
+                 }
+                 else
+                 {
+                     Console.Error.WriteLine($"Warning: Could not get load averages.");
+                     status.Load1 = status.Load5 = status.Load15 = 0; // Set to 0 if empty
+                 }
+
+
+                 // Update timestamp and UUID in status
+                 status.Uuid = config.Uuid;
+                 status.UpdateTime = currentDateTime;
+                 // status.V = Version; // TODO: Populate version
+
+                 // Console.WriteLine(JsonConvert.SerializeObject(status)); // Debugging status object
+            }
+            catch (Exception parseEx)
+            {
+                Console.Error.WriteLine($"Error parsing status results: {parseEx.Message}");
+                Console.Error.WriteLine($"Raw status result:\n{result}");
+                // Status object might be partially updated or remain stale
             }
         }
+        else
+        {
+            Console.Error.WriteLine("Failed to get status information from bash commands.");
+            // Status object will not be updated in this iteration, remains stale
+        }
+
+        lastDateTime = currentDateTime; // Update last datetime for speed calculation
+
+        // Sleep until the next reporting interval
+        Thread.Sleep(config.ReportTime); // ReportTime is the status update interval
+    } while (true);
+}
 
         private static void GetStatus()
         {
