@@ -30,6 +30,7 @@ namespace Client
         private static Process bashProcess;
         private static StreamReader bashOutput;
         private static StreamWriter bashInput;
+        private static Thread bashErrorReaderThread; // Thread to read stderr
 
         // Variables for calculating CPU usage difference over time
         private static double lastCpuTotalTime = 0;
@@ -41,7 +42,7 @@ namespace Client
 
         private static async Task Main(string[] args)
         {
-            Console.WriteLine($"Client starting. Platform: {RuntimeInformation.OSDescription}"); // Detailed startup log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Client starting. Platform: {RuntimeInformation.OSDescription}"); // Detailed startup log
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) Platform = "linux";
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) Platform = "windows";
@@ -55,12 +56,12 @@ namespace Client
             else if (Platform == "windows")
             {
                 configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "shandian_status", "config");
-                try { Directory.CreateDirectory(Path.GetDirectoryName(configPath)); Console.WriteLine($"Config directory ensured: {Path.GetDirectoryName(configPath)}"); } catch (Exception ex) { Console.Error.WriteLine($"Error creating config directory: {ex.Message}"); }
+                try { Directory.CreateDirectory(Path.GetDirectoryName(configPath)); Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Config directory ensured: {Path.GetDirectoryName(configPath)}"); } catch (Exception ex) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error creating config directory: {ex.Message}"); }
             }
             // Add logic for OSX config path if needed
             else
             {
-                Console.Error.WriteLine($"Unsupported platform: {Platform}"); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Unsupported platform: {Platform}"); // Critical error log
                 return;
             }
 
@@ -78,11 +79,11 @@ namespace Client
                 try
                 {
                     File.WriteAllText(configPath, JsonConvert.SerializeObject(config, Formatting.Indented));
-                    Console.WriteLine($"Configuration saved to {configPath}"); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Configuration saved to {configPath}"); // Detailed log
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"Error writing config file: {ex.Message}"); // Critical error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error writing config file: {ex.Message}"); // Critical error log
                     return;
                 }
                 Console.WriteLine("Client configured. Please run without arguments next time."); // User feedback
@@ -90,10 +91,10 @@ namespace Client
             }
 
             // If no args, try to load config
-            Console.WriteLine($"Attempting to load config from {configPath}"); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Attempting to load config from {configPath}"); // Detailed log
             if (!File.Exists(configPath))
             {
-                Console.Error.WriteLine($"Configuration file not found: {configPath}"); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Configuration file not found: {configPath}"); // Critical error log
                 Console.WriteLine("Please run with server URL argument to generate config: Client <server_url>"); // User feedback
                 return;
             }
@@ -101,22 +102,22 @@ namespace Client
             try
             {
                 config = JsonConvert.DeserializeObject<Config>(File.ReadAllText(configPath));
-                Console.WriteLine($"Configuration loaded: {JsonConvert.SerializeObject(config)}"); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Configuration loaded: {JsonConvert.SerializeObject(config)}"); // Detailed log
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Error loading config file: {ex.Message}"); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error loading config file: {ex.Message}"); // Critical error log
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(config.ServerUrl))
             {
-                Console.Error.WriteLine("Server URL is not configured."); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Server URL is not configured."); // Critical error log
                 return;
             }
             if (string.IsNullOrWhiteSpace(config.Uuid))
             {
-                Console.Error.WriteLine("Client UUID is not configured. Please re-run with server URL argument."); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Client UUID is not configured. Please re-run with server URL argument."); // Critical error log
                 return;
             }
 
@@ -125,7 +126,7 @@ namespace Client
             if (!config.ServerUrl.EndsWith("/ws/client", StringComparison.OrdinalIgnoreCase))
             {
                 config.ServerUrl = $"{config.ServerUrl.TrimEnd('/')}/ws/client";
-                Console.WriteLine($"Adjusted Server URL to: {config.ServerUrl}"); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Adjusted Server URL to: {config.ServerUrl}"); // Detailed log
             }
 
 
@@ -142,22 +143,22 @@ namespace Client
 
 
             // Initialize SignalR Client and start connection process
-            Console.WriteLine("Initializing SignalR client."); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Initializing SignalR client."); // Detailed log
             SignalRClient.Instance.InitializeConnection(config.ServerUrl, _appCts.Token);
 
             // Start tasks for getting status and reporting
-            Console.WriteLine("Starting status and report tasks."); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Starting status and report tasks."); // Detailed log
             Task statusTask = Task.Factory.StartNew(GetStatus, TaskCreationOptions.LongRunning);
             Task reportTask = Task.Factory.StartNew(Report, TaskCreationOptions.LongRunning);
 
             Console.CancelKeyPress += (sender, eventArgs) =>
             {
                 eventArgs.Cancel = true;
-                Console.WriteLine("Shutdown requested (Ctrl+C)."); // User feedback log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Shutdown requested (Ctrl+C)."); // User feedback log
                 _appCts.Cancel(); // Signal tasks to cancel
             };
 
-            Console.WriteLine("Client running. Press Ctrl+C to shut down."); // User feedback log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Client running. Press Ctrl+C to shut down."); // User feedback log
 
             try
             {
@@ -166,34 +167,52 @@ namespace Client
             }
             catch (TaskCanceledException)
             {
-                Console.WriteLine("Shutdown initiated by cancellation token."); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Shutdown initiated by cancellation token."); // Detailed log
             }
             finally
             {
-                Console.WriteLine("Starting shutdown cleanup."); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Starting shutdown cleanup."); // Detailed log
+
+                // Signal bash error reader thread to stop
+                if (bashErrorReaderThread != null && bashErrorReaderThread.IsAlive)
+                {
+                    // Error reader loop should check _appCts.IsCancellationRequested
+                    // A more robust method might involve closing the stderr stream or using a specific signal
+                    // For now, rely on the thread checking the cancellation token
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Signaling bash error reader thread to stop.");
+                }
+
 
                 // Clean up bash process on exit
                 if (Platform == "linux" && bashProcess != null) // Check for null before HasExited
                 {
                     if (!bashProcess.HasExited)
                     {
-                        Console.WriteLine("Attempting graceful bash process exit."); // Detailed log
-                        try { bashInput.WriteLine("exit"); bashInput.Flush(); } catch { Console.Error.WriteLine("Error writing exit to bash input."); }
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Attempting graceful bash process exit."); // Detailed log
+                        try { bashInput.WriteLine("exit"); bashInput.Flush(); } catch (Exception ex) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error writing exit to bash input: {ex.Message}"); }
                         bool exited = bashProcess.WaitForExit(2000); // Wait up to 2 seconds
                         if (!exited)
                         {
-                            Console.WriteLine("Bash process did not exit gracefully, force killing."); // Detailed log
-                            try { bashProcess.Kill(); } catch (Exception ex) { Console.Error.WriteLine($"Error killing bash process: {ex.Message}"); }
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process did not exit gracefully within timeout, force killing."); // Detailed log
+                            try { bashProcess.Kill(); } catch (Exception ex) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error killing bash process: {ex.Message}"); }
                         }
                         else
                         {
-                            Console.WriteLine("Bash process exited gracefully."); // Detailed log
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process exited gracefully."); // Detailed log
                         }
                     }
-                    if (bashProcess != null) try { bashProcess.Dispose(); Console.WriteLine("Bash process disposed."); } catch (Exception ex) { Console.Error.WriteLine($"Error disposing bash process: {ex.Message}"); } // Dispose resources
+                    if (bashProcess != null) try { bashProcess.Dispose(); Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process disposed."); } catch (Exception ex) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error disposing bash process: {ex.Message}"); } // Dispose resources
+                }
+                // Join the error reader thread to ensure it finishes
+                if (bashErrorReaderThread != null && bashErrorReaderThread.IsAlive)
+                {
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Waiting for bash error reader thread to join.");
+                    bashErrorReaderThread.Join(1000); // Wait up to 1 second for it to finish
+                    if (bashErrorReaderThread.IsAlive) Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash error reader thread did not join.");
                 }
 
-                Console.WriteLine("Disposing SignalR client."); // Detailed log
+
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Disposing SignalR client."); // Detailed log
                 SignalRClient.Instance.Dispose();
 
                 // Optional: Wait for status and report tasks to finish
@@ -202,18 +221,23 @@ namespace Client
                 // Console.WriteLine("Status and report tasks finished or timed out.");
 
 
-                Console.WriteLine("Client shutdown complete."); // Final log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Client shutdown complete."); // Final log
             }
         }
 
         private static void InitializeBashProcess()
         {
-            if (bashProcess != null && !bashProcess.HasExited) return;
+            if (bashProcess != null && !bashProcess.HasExited)
+            {
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process already running, skipping re-initialization.");
+                return;
+            }
 
             try
             {
-                if (bashProcess != null) try { bashProcess.Dispose(); Console.WriteLine("Disposed previous bash process during re-init."); } catch { }
+                if (bashProcess != null) try { bashProcess.Dispose(); Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Disposed previous bash process during re-init."); } catch (Exception ex) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Error disposing old bash process: {ex.Message}"); }
 
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Starting new bash process."); // Detailed log
                 bashProcess = new Process
                 {
                     StartInfo = new ProcessStartInfo
@@ -221,7 +245,7 @@ namespace Client
                         FileName = "/bin/bash",
                         RedirectStandardOutput = true,
                         RedirectStandardInput = true,
-                        RedirectStandardError = true, // Redirect error stream too
+                        RedirectStandardError = true, // Redirect error stream
                         UseShellExecute = false,
                         CreateNoWindow = true,
                         WorkingDirectory = "/"
@@ -230,21 +254,53 @@ namespace Client
                 bool started = bashProcess.Start();
                 if (started)
                 {
-                    Console.WriteLine($"Bash process started successfully (ID: {bashProcess.Id})."); // Detailed log
-                    Thread.Sleep(100); // Give bash a moment to start
-                    if (bashProcess.StandardOutput != null) bashProcess.StandardOutput.DiscardBufferedData();
-                    // Optional: Read StandardError in a separate thread if needed for debugging
-                    // new Thread(() => { try { string err = bashProcess.StandardError.ReadToEnd(); if (!string.IsNullOrEmpty(err)) Console.Error.WriteLine($"Bash STDERR on init: {err}"); } catch { } }).Start();
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process started successfully (ID: {bashProcess.Id})."); // Detailed log
+                    bashOutput = bashProcess.StandardOutput;
+                    bashInput = bashProcess.StandardInput;
+                    StreamReader bashError = bashProcess.StandardError;
+
+                    // Start a separate thread to read stderr
+                    bashErrorReaderThread = new Thread(() =>
+                    {
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash stderr reader thread started.");
+                        try
+                        {
+                            string errorLine;
+                            // Read lines until the stream is closed or cancellation is requested
+                            while (!_appCts.IsCancellationRequested && (errorLine = bashError.ReadLine()) != null)
+                            {
+                                // Check if the bash process is still alive
+                                if (bashProcess.HasExited)
+                                {
+                                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash STDERR (Process Exited): {errorLine}");
+                                    break; // Exit loop if process exited
+                                }
+                                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash STDERR: {errorLine}"); // Log any stderr output
+                            }
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash stderr reader thread finished reading."); // Log thread finish reason (likely stream closed)
+                        }
+                        catch (Exception threadEx)
+                        {
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash stderr reader thread exception: {threadEx.Message}"); // Log thread error
+                        }
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash stderr reader thread exiting.");
+                    });
+                    bashErrorReaderThread.IsBackground = true; // Allow app to exit even if this thread is stuck
+                    bashErrorReaderThread.Start();
+
+
+                    Thread.Sleep(100); // Give bash/threads a moment to start
+                    bashOutput.DiscardBufferedData(); // Clear any initial stdout prompt/messages
                 }
                 else
                 {
-                    Console.Error.WriteLine("Bash process failed to start."); // Critical error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash process failed to start."); // Critical error log
                     _appCts.Cancel(); // Signal application shutdown
                 }
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Failed to initialize bash process: {ex.Message}"); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Failed to initialize bash process: {ex.Message}"); // Critical error log
                 _appCts.Cancel();
             }
         }
@@ -252,16 +308,35 @@ namespace Client
         public static string Bash(string cmd)
         {
             // Check for process availability and cancellation
-            if (Platform != "linux" || bashProcess == null || bashInput == null || bashOutput == null || bashProcess.HasExited || _appCts.IsCancellationRequested)
+            if (Platform != "linux")
             {
-                // Console.WriteLine($"Bash command skipped: Process not ready or cancelled. Cmd: {cmd}"); // Very verbose debug
+                // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash command skipped: Platform is not Linux. Cmd: {cmd}");
                 return "";
             }
+            if (bashProcess == null || bashInput == null || bashOutput == null)
+            {
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash command skipped: Bash process streams are null. Cmd: {cmd}"); // Error log
+                return "";
+            }
+            if (bashProcess.HasExited)
+            {
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash command skipped: Bash process has exited. Attempting re-initialization. Cmd: {cmd}"); // Error log
+                InitializeBashProcess(); // Attempt re-init
+                                         // After attempting re-init, check if process is now available. If not, return empty.
+                if (bashProcess == null || bashProcess.HasExited) return "";
+            }
+            if (_appCts.IsCancellationRequested)
+            {
+                // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash command skipped: Cancellation requested. Cmd: {cmd}");
+                return "";
+            }
+
 
             try
             {
                 // Clear any previous buffered output before sending a command
                 bashOutput.DiscardBufferedData();
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Executing bash command: {cmd}"); // Log command execution
 
                 bashInput.WriteLine(cmd);
                 string endMarker = $"EndOfCommand_{Guid.NewGuid():N}";
@@ -274,7 +349,7 @@ namespace Client
                 // Use ReadLineAsync with timeout/cancellation in a real-world robust app
                 while (!_appCts.IsCancellationRequested && (line = bashOutput.ReadLine()) != null)
                 {
-                    //Console.WriteLine($"DEBUG: Bash read line: '{line}'"); // Debugging individual lines (very verbose)
+                    //Console.WriteLine($"DEBUG Bash STDOUT: '{line}'"); // Debugging individual stdout lines (very verbose)
                     if (line.Trim() == endMarker)
                         break;
                     result += line + "\n";
@@ -282,8 +357,8 @@ namespace Client
 
                 if (_appCts.IsCancellationRequested)
                 {
-                    Console.WriteLine($"Bash read cancelled during command: {cmd}"); // Log cancellation during read
-                    return "";
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Bash read cancelled during command: {cmd}"); // Log cancellation during read
+                    return ""; // Return empty if cancelled during read
                 }
 
                 // Remove the final newline added after the marker check
@@ -291,20 +366,20 @@ namespace Client
             }
             catch (IOException ex)
             {
-                Console.Error.WriteLine($"IOException during bash command '{cmd}': {ex.Message}. Attempting re-initialization."); // Error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] IOException during bash command '{cmd}': {ex.Message}. Attempting re-initialization."); // Error log
                 InitializeBashProcess(); // Attempt to re-initialize bash process
                 return "";
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"Exception while running bash command '{cmd}': {ex.Message}"); // Error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Exception while running bash command '{cmd}': {ex.Message}"); // Error log
                 return "";
             }
         }
 
         private static void GetHost()
         {
-            Console.WriteLine("Gathering host information."); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Gathering host information."); // Detailed log
             switch (Platform)
             {
                 case "linux":
@@ -314,18 +389,18 @@ namespace Client
                     GetHostWindows(); // Logs inside if errors occur
                     break;
                 case "osx":
-                    Console.WriteLine($"GetHost not implemented for platform: {Platform}"); // Log unimplemented
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHost not implemented for platform: {Platform}"); // Log unimplemented
                     break;
                 default:
-                    Console.WriteLine($"GetHost not implemented for platform: {Platform}"); // Log unimplemented
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHost not implemented for platform: {Platform}"); // Log unimplemented
                     break;
             }
-            Console.WriteLine($"Host Info Collected: {JsonConvert.SerializeObject(host)}"); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Host Info Collected: {JsonConvert.SerializeObject(host)}"); // Detailed log
         }
 
         private static void GetHostWindows()
         {
-            Console.WriteLine("GetHostWindows not fully implemented. Using placeholder values."); // Log incomplete implementation
+            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostWindows not fully implemented. Using placeholder values."); // Log incomplete implementation
             host.Platform = "Windows";
             host.Cpu = "Unknown Windows CPU";
             host.MemTotal = 0; // Placeholder
@@ -341,7 +416,7 @@ namespace Client
         // This task runs continuously to report status
         private static async void Report() // async void for fire-and-forget task start
         {
-            Console.WriteLine("Report task started."); // Task start log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task started."); // Task start log
             while (!_appCts.IsCancellationRequested)
             {
                 try
@@ -349,7 +424,7 @@ namespace Client
                     // Wait for status to be ready initially
                     if (string.IsNullOrEmpty(status.Uuid))
                     {
-                        Console.WriteLine("Report task: Waiting for status data..."); // Log waiting
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task: Waiting for status data before first report."); // Log waiting
                         await Task.Delay(config.ReportTime, _appCts.Token); // Wait before checking again
                         continue; // Check conditions again
                     }
@@ -357,24 +432,24 @@ namespace Client
                     // Only attempt to report if the SignalR client thinks it's connected
                     if (SignalRClient.Instance.IsConnected)
                     {
-                        // Console.WriteLine($"Report task: Attempting to report status."); // Very verbose log
+                        // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task: Attempting to report status."); // Very verbose log
                         await SignalRClient.Instance.Report(status); // Internal method logs success/failure
-                                                                     // Console.WriteLine("Report task: Status report attempt finished."); // Very verbose log
+                                                                     // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task: Status report attempt finished."); // Very verbose log
                     }
                     else
                     {
-                        // Console.WriteLine("Report task: SignalR client not connected, skipping report."); // Very verbose log
+                        // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task: SignalR client not connected, skipping report."); // Very verbose log
                     }
                 }
                 catch (TaskCanceledException)
                 {
-                    Console.WriteLine("Report task cancelled."); // Log task cancellation
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task cancelled."); // Log task cancellation
                     break; // Exit loop on cancellation
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine($"Report task: Unhandled exception in loop: {e.Message}"); // Log unexpected error
-                                                                                                       // Continue loop, SignalR client handles its reconnects internally
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task: Unhandled exception in loop: {e.Message}"); // Log unexpected error
+                                                                                                                                                // Continue loop, SignalR client handles its reconnects internally
                 }
 
                 // Wait for the next reporting interval
@@ -384,24 +459,24 @@ namespace Client
                 }
                 catch (TaskCanceledException)
                 {
-                    Console.WriteLine("Report task delay cancelled."); // Log delay cancellation
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task delay cancelled."); // Log delay cancellation
                     break; // Exit loop on cancellation
                 }
             }
-            Console.WriteLine("Report task exiting."); // Task exit log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Report task exiting."); // Task exit log
         }
 
 
         // This task runs continuously to gather status
         private static async void GetStatus() // async void for fire-and-forget task start
         {
-            Console.WriteLine("GetStatus task started."); // Task start log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task started."); // Task start log
 
             // Initial status values are implicitly 0/default
             // Initialize last network transfer values on first run - Keep this to get initial network cumulative bytes
             if (Platform == "linux") // Only needed for Linux Bash method
             {
-                Console.WriteLine("GetStatus task: Initializing network stats baseline."); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Initializing network stats baseline."); // Detailed log
                 string initialNetCmd = $"cat /proc/net/dev | grep \"{NetName}\" | sed 's/:/ /g' | awk '{{print $2,$10}}';";
                 var initialNetResult = Bash(initialNetCmd);
                 if (!string.IsNullOrEmpty(initialNetResult))
@@ -411,25 +486,25 @@ namespace Client
                         var net = initialNetResult.Trim().Split(' ');
                         if (net.Length == 2)
                         {
-                            if (double.TryParse(net[0], out double initialNetIn)) status.NetInTransfer = initialNetIn; else { Console.Error.WriteLine($"GetStatus task: Failed to parse initial NetInTransfer from '{net[0]}'"); status.NetInTransfer = 0; }
-                            if (double.TryParse(net[1], out double initialNetOut)) status.NetOutTransfer = initialNetOut; else { Console.Error.WriteLine($"GetStatus task: Failed to parse initial NetOutTransfer from '{net[1]}'"); status.NetOutTransfer = 0; }
-                            Console.WriteLine($"GetStatus task: Initialized network transfers baseline: In={status.NetInTransfer}, Out={status.NetOutTransfer}"); // Detailed log
+                            if (double.TryParse(net[0], out double initialNetIn)) status.NetInTransfer = initialNetIn; else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Failed to parse initial NetInTransfer from '{net[0]}'"); status.NetInTransfer = 0; }
+                            if (double.TryParse(net[1], out double initialNetOut)) status.NetOutTransfer = initialNetOut; else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Failed to parse initial NetOutTransfer from '{net[1]}'"); status.NetOutTransfer = 0; }
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Initialized network transfers baseline: In={status.NetInTransfer}, Out={status.NetOutTransfer}"); // Detailed log
                         }
                         else
                         {
-                            Console.Error.WriteLine($"GetStatus task: Unexpected initial netstat format: '{initialNetResult}'"); // Error log
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Unexpected initial netstat format: '{initialNetResult}'"); // Error log
                             status.NetInTransfer = 0; status.NetOutTransfer = 0;
                         }
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"GetStatus task: Error parsing initial netstat: {ex.Message}"); // Error log
+                        Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Error parsing initial netstat: {ex.Message}"); // Error log
                         status.NetInTransfer = 0; status.NetOutTransfer = 0;
                     }
                 }
                 else
                 {
-                    Console.Error.WriteLine("GetStatus task: Warning: Failed to get initial network stats. Net speed will be 0 initially."); // Warning log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Warning: Failed to get initial network stats from bash. Net speed will be 0 initially."); // Warning log
                     status.NetInTransfer = 0; status.NetOutTransfer = 0; // Ensure they are zero if command fails
                 }
 
@@ -440,8 +515,11 @@ namespace Client
             while (!_appCts.IsCancellationRequested)
             {
                 DateTime currentDateTime = DateTime.Now.ToUniversalTime();
-                TimeSpan diff = currentDateTime - status.UpdateTime; // Use status.UpdateTime for diff base
+                // Update status.UpdateTime *before* the delay for the next iteration's calculation
+                status.UpdateTime = DateTime.Now.ToUniversalTime();
+                TimeSpan diff = currentDateTime - status.UpdateTime; // This diff calculation might be slightly off if status.UpdateTime wasn't updated precisely before the *previous* delay
                 double diffSeconds = diff.TotalSeconds;
+                if (diffSeconds <= 0) diffSeconds = 1; // Prevent division by zero, assume at least 1 second passed if time hasn't moved forward (rare)
 
                 try
                 {
@@ -454,30 +532,30 @@ namespace Client
                             GetStatusWindows(); // Logs inside if errors occur
                             break;
                         case "osx":
-                            Console.WriteLine($"GetStatus not implemented for platform: {Platform}"); // Log unimplemented
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus not implemented for platform: {Platform}"); // Log unimplemented
                             break;
                         default:
-                            Console.WriteLine($"GetStatus not implemented for platform: {Platform}"); // Log unimplemented
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus not implemented for platform: {Platform}"); // Log unimplemented
                             break;
                     }
                     // After gathering status (synchronously), update the status object
 
                     status.Uuid = config.Uuid; // Ensure Uuid is always set in status
-                                               // status.UpdateTime is updated *after* the loop's delay
+                                               // status.UpdateTime is updated above the loop for the next iteration
                                                // status.V = Version; // TODO: Populate version
 
-                    // Console.WriteLine($"Status updated."); // Verbose log
+                    // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] Status updated."); // Verbose log
                     // Console.WriteLine($"DEBUG Status: CPU={status.CpuUsed:F2}%, MemUsed={status.MemUsed}MB, NetInSpeed={status.NetInSpeed/1024:F2}KB/s, Uptime={status.Uptime:F0}s"); // Debug status values
 
                 }
                 catch (TaskCanceledException)
                 {
-                    Console.WriteLine("GetStatus task cancelled."); // Log task cancellation
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task cancelled."); // Log task cancellation
                     break; // Exit loop on cancellation
                 }
                 catch (Exception e)
                 {
-                    Console.Error.WriteLine($"GetStatus task: Unhandled exception in loop: {e.Message}"); // Log unexpected error
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task: Unhandled exception in loop: {e.Message}"); // Log unexpected error
                     // Continue loop, status object might be stale
                 }
 
@@ -485,30 +563,25 @@ namespace Client
                 // Status gathering interval is the same as report time in this code
                 try
                 {
-                    status.UpdateTime = DateTime.Now.ToUniversalTime(); // Update timestamp before delay
                     await Task.Delay(config.ReportTime, _appCts.Token);
                 }
                 catch (TaskCanceledException)
                 {
-                    Console.WriteLine("GetStatus task delay cancelled."); // Log delay cancellation
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task delay cancelled."); // Log delay cancellation
                     break; // Exit loop on cancellation
                 }
             }
-            Console.WriteLine("GetStatus task exiting."); // Task exit log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatus task exiting."); // Task exit log
         }
 
 
         private static void GetStatusLinux() // Synchronous method
         {
-            // Note: lastDateTime, NetInTransfer, NetOutTransfer, lastCpuTotalTime, lastCpuIdleTime
-            // are static members, maintaining state between calls.
-
             DateTime currentDateTime = DateTime.Now.ToUniversalTime();
-            // Use the time difference between the end of the previous poll and the start of the current poll
-            // We updated status.UpdateTime *before* the Task.Delay in the GetStatus async method
+            // Calculate diffSeconds based on the actual time elapsed since the status object was last updated before the delay
             TimeSpan diff = currentDateTime - status.UpdateTime;
             double diffSeconds = diff.TotalSeconds;
-            if (diffSeconds <= 0) diffSeconds = 1; // Avoid division by zero or negative time
+            if (diffSeconds <= 0) diffSeconds = 1; // Prevent division by zero
 
             // Combine all status commands into one bash call
             var cmd =
@@ -521,12 +594,12 @@ namespace Client
                 "LANG=C; w | head -1 | awk -F'load average:' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//';"; // 6: Load Averages
 
             var result = Bash(cmd);
-            //Console.WriteLine($"DEBUG: GetStatusLinux raw bash result:\n{result}"); // Debugging raw output (very verbose)
+            //Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] DEBUG GetStatusLinux raw bash result:\n{result}"); // Debugging raw output (very verbose)
 
             if (!string.IsNullOrEmpty(result))
             {
                 var temp = result.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                //Console.WriteLine($"DEBUG: GetStatusLinux parsed {temp.Length} lines from bash result."); // Debugging line count
+                //Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] DEBUG GetStatusLinux parsed {temp.Length} lines from bash result."); // Debugging line count
 
                 try
                 {
@@ -542,16 +615,17 @@ namespace Client
                                 double diffTotal = currentCpuTotalTime - lastCpuTotalTime;
                                 double diffIdle = currentCpuIdleTime - lastCpuIdleTime;
                                 if (diffTotal > 0) status.CpuUsed = ((diffTotal - diffIdle) / diffTotal) * 100.0;
-                                else status.CpuUsed = 0; // Avoid division by zero
+                                else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: diffTotal was 0 for CPU calculation."); status.CpuUsed = 0; } // Log zero diffTotal
                             }
-                            else status.CpuUsed = 0; // First iteration or no time passed
+                            else { Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: lastCpuTotalTime=0 or diffSeconds=0, setting CPU usage to 0."); status.CpuUsed = 0; } // Log when usage is 0
+                                                                                                                                                                                                      // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] DEBUG CPU: Total={currentCpuTotalTime}, Idle={currentCpuIdleTime}, LastTotal={lastCpuTotalTime}, LastIdle={lastCpuIdleTime}, DiffTotal={currentCpuTotalTime - lastCpuTotalTime}, DiffIdle={currentCpuIdleTime - lastCpuIdleTime}, DiffSec={diffSeconds}, Usage={status.CpuUsed:F2}%"); // Detailed CPU debug
 
                             lastCpuTotalTime = currentCpuTotalTime; // Always update for the next iteration
                             lastCpuIdleTime = currentCpuIdleTime;
                         }
-                        else { Console.Error.WriteLine($"GetStatusLinux: Failed to parse CPU stats format: '{cpuStatsLine}'"); status.CpuUsed = 0; } // Parsing error log
+                        else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse CPU stats format: '{cpuStatsLine}'"); status.CpuUsed = 0; } // Parsing error log
                     }
-                    else { Console.Error.WriteLine($"GetStatusLinux: CPU stats line missing from bash output."); status.CpuUsed = 0; } // Missing line error log
+                    else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: CPU stats line missing from bash output."); status.CpuUsed = 0; } // Missing line error log
 
 
                     // 1: Network Stats
@@ -566,32 +640,33 @@ namespace Client
                             {
                                 status.NetInSpeed = (currentNetInTransfer - status.NetInTransfer) / diffSeconds;
                                 status.NetOutSpeed = (currentNetOutTransfer - status.NetOutTransfer) / diffSeconds;
+                                // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] DEBUG Net: InSpeed={status.NetInSpeed:F0}, OutSpeed={status.NetOutSpeed:F0} B/s. DiffSec={diffSeconds}. CurrIn={currentNetInTransfer}, CurrOut={currentNetOutTransfer}. LastIn={status.NetInTransfer}, LastOut={status.NetOutTransfer}"); // Detailed Net debug
                             }
                             else
                             {
-                                Console.WriteLine($"GetStatusLinux: First network stats or diffSeconds=0, setting speed to 0."); // Log when speed is 0
+                                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: First network stats or diffSeconds=0, setting speed to 0."); // Log when speed is 0
                                 status.NetInSpeed = 0;
                                 status.NetOutSpeed = 0;
                             }
                             status.NetInTransfer = currentNetInTransfer; // Always update for the next iteration
                             status.NetOutTransfer = currentNetOutTransfer;
                         }
-                        else { Console.Error.WriteLine($"GetStatusLinux: Failed to parse network stats format: '{netStatsLine}' (NetName: {NetName})"); status.NetInSpeed = 0; status.NetOutSpeed = 0; status.NetInTransfer = 0; status.NetOutTransfer = 0; } // Parsing error log
+                        else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse network stats format: '{netStatsLine}' (NetName: {NetName})"); status.NetInSpeed = 0; status.NetOutSpeed = 0; status.NetInTransfer = 0; status.NetOutTransfer = 0; } // Parsing error log
                     }
-                    else { Console.Error.WriteLine($"GetStatusLinux: Network stats line missing from bash output (NetName: {NetName})."); status.NetInSpeed = 0; status.NetOutSpeed = 0; status.NetInTransfer = 0; status.NetOutTransfer = 0; } // Missing line error log
+                    else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Network stats line missing from bash output (NetName: {NetName})."); status.NetInSpeed = 0; status.NetOutSpeed = 0; status.NetInTransfer = 0; status.NetOutTransfer = 0; } // Missing line error log
 
 
                     // 2: Mem Used
-                    if (!double.TryParse(temp.ElementAtOrDefault(2), out double memUsed)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Mem Used from '{temp.ElementAtOrDefault(2)}'"); status.MemUsed = 0; } else status.MemUsed = memUsed; // Parsing error log
+                    if (!double.TryParse(temp.ElementAtOrDefault(2), out double memUsed)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Mem Used from '{temp.ElementAtOrDefault(2)}'"); status.MemUsed = 0; } else status.MemUsed = memUsed; // Parsing error log
 
                     // 3: Swap Used
-                    if (!double.TryParse(temp.ElementAtOrDefault(3), out double swapUsed)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Swap Used from '{temp.ElementAtOrDefault(3)}'"); status.SwapUsed = 0; } else status.SwapUsed = swapUsed; // Parsing error log
+                    if (!double.TryParse(temp.ElementAtOrDefault(3), out double swapUsed)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Swap Used from '{temp.ElementAtOrDefault(3)}'"); status.SwapUsed = 0; } else status.SwapUsed = swapUsed; // Parsing error log
 
                     // 4: Uptime
-                    if (!double.TryParse(temp.ElementAtOrDefault(4), out double uptime)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Uptime from '{temp.ElementAtOrDefault(4)}'"); status.Uptime = 0; } else status.Uptime = uptime; // Parsing error log
+                    if (!double.TryParse(temp.ElementAtOrDefault(4), out double uptime)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Uptime from '{temp.ElementAtOrDefault(4)}'"); status.Uptime = 0; } else status.Uptime = uptime; // Parsing error log
 
                     // 5: Disk Used (convert 1k blocks to MB)
-                    if (!double.TryParse(temp.ElementAtOrDefault(5), out double diskUsedBlocks)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Disk Used from '{temp.ElementAtOrDefault(5)}'"); status.DiskUsed = 0; } else status.DiskUsed = diskUsedBlocks / 1024.0; // Parsing error log
+                    if (!double.TryParse(temp.ElementAtOrDefault(5), out double diskUsedBlocks)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Disk Used from '{temp.ElementAtOrDefault(5)}'"); status.DiskUsed = 0; } else status.DiskUsed = diskUsedBlocks / 1024.0; // Parsing error log
 
                     // 6: Load Averages
                     var loadLine = temp.ElementAtOrDefault(6)?.Trim();
@@ -601,26 +676,26 @@ namespace Client
                         if (load.Length >= 3)
                         {
                             double tempLoad1, tempLoad5, tempLoad15;
-                            if (!double.TryParse(load[0].Trim(), out tempLoad1)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Load1 from '{load.ElementAtOrDefault(0)?.Trim()}'"); status.Load1 = 0; } else status.Load1 = tempLoad1; // Parsing error log
-                            if (!double.TryParse(load[1].Trim(), out tempLoad5)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Load5 from '{load.ElementAtOrDefault(1)?.Trim()}'"); status.Load5 = 0; } else status.Load5 = tempLoad5; // Parsing error log
-                            if (!double.TryParse(load[2].Trim(), out tempLoad15)) { Console.Error.WriteLine($"GetStatusLinux: Failed to parse Load15 from '{load.ElementAtOrDefault(2)?.Trim()}'"); status.Load15 = 0; } else status.Load15 = tempLoad15; // Parsing error log
+                            if (!double.TryParse(load[0].Trim(), out tempLoad1)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Load1 from '{load.ElementAtOrDefault(0)?.Trim()}'"); status.Load1 = 0; } else status.Load1 = tempLoad1; // Parsing error log
+                            if (!double.TryParse(load[1].Trim(), out tempLoad5)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Load5 from '{load.ElementAtOrDefault(1)?.Trim()}'"); status.Load5 = 0; } else status.Load5 = tempLoad5; // Parsing error log
+                            if (!double.TryParse(load[2].Trim(), out tempLoad15)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Failed to parse Load15 from '{load.ElementAtOrDefault(2)?.Trim()}'"); status.Load15 = 0; } else status.Load15 = tempLoad15; // Parsing error log
                         }
-                        else { Console.Error.WriteLine($"GetStatusLinux: Unexpected load average format (less than 3 values): '{loadLine}'"); status.Load1 = status.Load5 = status.Load15 = 0; } // Format error log
+                        else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Unexpected load average format (less than 3 values): '{loadLine}'"); status.Load1 = status.Load5 = status.Load15 = 0; } // Format error log
                     }
-                    else { Console.Error.WriteLine($"GetStatusLinux: Load average line missing from bash output."); status.Load1 = status.Load5 = status.Load15 = 0; } // Missing line error log
+                    else { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Load average line missing from bash output."); status.Load1 = status.Load5 = status.Load15 = 0; } // Missing line error log
 
                 }
                 catch (Exception parseEx)
                 {
-                    Console.Error.WriteLine($"GetStatusLinux: Unhandled error during parsing bash results: {parseEx.Message}"); // General parsing error log
-                    Console.Error.WriteLine($"GetStatusLinux: Raw bash result that caused error:\n{result}"); // Log raw output on error
-                                                                                                              // Status object might be partially updated or remain stale
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Unhandled error during parsing bash results: {parseEx.Message}"); // General parsing error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Raw bash result that caused error:\n{result}"); // Log raw output on error
+                                                                                                                                                       // Status object might be partially updated or remain stale
                 }
             }
             else
             {
-                Console.Error.WriteLine("GetStatusLinux: Bash command returned empty or failed result."); // Bash command failure log
-                                                                                                          // If bash command itself failed or returned empty result, set all dynamic stats to 0
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusLinux: Bash command returned empty or failed result."); // Bash command failure log
+                                                                                                                                                    // If bash command itself failed or returned empty result, set all dynamic stats to 0
                 status.CpuUsed = 0;
                 status.MemUsed = 0;
                 status.SwapUsed = 0;
@@ -634,10 +709,10 @@ namespace Client
 
         private static void GetHostLinux()
         {
-            Console.WriteLine("GetHostLinux: Starting host info collection."); // Detailed log
+            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Starting host info collection."); // Detailed log
             //获取网卡 - Retained original logic
             var tempeth = Bash("cat /proc/net/dev | awk '{if($2>0 && NR > 2) print substr($1, 0, index($1, \":\"))}'");
-            if (string.IsNullOrEmpty(tempeth)) Console.Error.WriteLine("GetHostLinux: Bash command for network interfaces returned empty."); // Log empty output
+            if (string.IsNullOrEmpty(tempeth)) Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Bash command for network interfaces returned empty."); // Log empty output
 
             var eths = tempeth.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries).ToList();
             var listRemove = new List<string>();
@@ -652,11 +727,11 @@ namespace Client
 
             if (string.IsNullOrEmpty(NetName))
             {
-                Console.Error.WriteLine("GetHostLinux: Warning: Could not determine main network interface name. Network stats may be inaccurate."); // Warning log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Warning: Could not determine main network interface name. Network stats may be inaccurate."); // Warning log
             }
             else
             {
-                Console.WriteLine($"GetHostLinux: Detected main network interface: {NetName}"); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Detected main network interface: {NetName}"); // Detailed log
             }
 
 
@@ -675,7 +750,7 @@ namespace Client
                 "([ -f /etc/redhat-release ] && awk '{print ($1,$3~/^[0-9]/?$3:$4)}' /etc/redhat-release)||([ -f /etc/os-release ] && awk -F'[= \"]' '/PRETTY_NAME/{print $3,$4,$5}' /etc/os-release)||([ -f /etc/lsb-release ] && awk -F'[=\"]+' '/DESCRIPTION/{print $2}' /etc/lsb-release);";
 
             var result = Bash(cmd);
-            if (string.IsNullOrEmpty(result)) Console.Error.WriteLine("GetHostLinux: Bash command for host info returned empty or failed."); // Log empty output
+            if (string.IsNullOrEmpty(result)) Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Bash command for host info returned empty or failed."); // Log empty output
 
             if (!string.IsNullOrEmpty(result))
             {
@@ -688,54 +763,54 @@ namespace Client
                     if (string.IsNullOrEmpty(temp.ElementAtOrDefault(0)?.Trim())) // handle case where model name is empty
                         host.Cpu = ("X" + temp.ElementAtOrDefault(1)?.Trim()).Trim();
                     // Log if CPU info looks incomplete
-                    if (string.IsNullOrEmpty(host.Cpu) || host.Cpu.Trim() == "X") Console.Error.WriteLine($"GetHostLinux: Warning: Could not get full CPU info from bash. Raw: '{temp.ElementAtOrDefault(0)}', '{temp.ElementAtOrDefault(1)}'");
+                    if (string.IsNullOrEmpty(host.Cpu) || host.Cpu.Trim() == "X") Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Warning: Could not get full CPU info from bash. Raw: '{temp.ElementAtOrDefault(0)}', '{temp.ElementAtOrDefault(1)}'");
 
 
                     // Parse numerical values with error handling
-                    if (!double.TryParse(temp.ElementAtOrDefault(3), out double memTotal)) { Console.Error.WriteLine($"GetHostLinux: Failed to parse MemTotal from '{temp.ElementAtOrDefault(3)}'"); host.MemTotal = 0; } else host.MemTotal = memTotal;
-                    if (!double.TryParse(temp.ElementAtOrDefault(4), out double swapTotal)) { Console.Error.WriteLine($"GetHostLinux: Failed to parse SwapTotal from '{temp.ElementAtOrDefault(4)}'"); host.SwapTotal = 0; } else host.SwapTotal = swapTotal;
-                    if (!double.TryParse(temp.ElementAtOrDefault(5), out double bootTime)) { Console.Error.WriteLine($"GetHostLinux: Failed to parse BootTime from '{temp.ElementAtOrDefault(5)}'"); host.BootTime = 0; } else host.BootTime = bootTime; // Uptime in seconds
+                    if (!double.TryParse(temp.ElementAtOrDefault(3), out double memTotal)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Failed to parse MemTotal from '{temp.ElementAtOrDefault(3)}'"); host.MemTotal = 0; } else host.MemTotal = memTotal;
+                    if (!double.TryParse(temp.ElementAtOrDefault(4), out double swapTotal)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Failed to parse SwapTotal from '{temp.ElementAtOrDefault(4)}'"); host.SwapTotal = 0; } else host.SwapTotal = swapTotal;
+                    if (!double.TryParse(temp.ElementAtOrDefault(5), out double bootTime)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Failed to parse BootTime from '{temp.ElementAtOrDefault(5)}'"); host.BootTime = 0; } else host.BootTime = bootTime; // Uptime in seconds
 
                     host.Arch = temp.ElementAtOrDefault(6)?.Trim() ?? "";
-                    if (string.IsNullOrEmpty(host.Arch)) Console.Error.WriteLine($"GetHostLinux: Warning: Could not get architecture.");
+                    if (string.IsNullOrEmpty(host.Arch)) Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Warning: Could not get architecture.");
 
                     // df reports in 1k blocks, convert to MB for consistency with free -m
-                    if (!double.TryParse(temp.ElementAtOrDefault(7), out double diskTotalBlocks)) { Console.Error.WriteLine($"GetHostLinux: Failed to parse DiskTotal from '{temp.ElementAtOrDefault(7)}'"); host.DiskTotal = 0; } else host.DiskTotal = diskTotalBlocks / 1024.0; // Convert 1k blocks to MB
+                    if (!double.TryParse(temp.ElementAtOrDefault(7), out double diskTotalBlocks)) { Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Failed to parse DiskTotal from '{temp.ElementAtOrDefault(7)}'"); host.DiskTotal = 0; } else host.DiskTotal = diskTotalBlocks / 1024.0; // Convert 1k blocks to MB
 
                     host.Platform = temp.ElementAtOrDefault(8)?.Trim() ?? "";
-                    if (string.IsNullOrEmpty(host.Platform)) Console.Error.WriteLine($"GetHostLinux: Warning: Could not get OS platform name.");
+                    if (string.IsNullOrEmpty(host.Platform)) Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Warning: Could not get OS platform name.");
 
 
                     // Attempt to get public IP
-                    Console.WriteLine("GetHostLinux: Fetching public IP..."); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Fetching public IP..."); // Detailed log
                     try
                     {
                         using (var client = new HttpClient())
                         {
-                       
+                           
                             host.Ip = client.GetStringAsync("https://api-ipv4.ip.sb/ip").GetAwaiter().GetResult().TrimEnd('\n', '\r').Trim();
-                            Console.WriteLine($"GetHostLinux: Public IP fetched: {host.Ip}"); // Detailed log
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Public IP fetched: {host.Ip}"); // Detailed log
                         }
                     }
                     catch (Exception ipEx)
                     {
-                        Console.Error.WriteLine($"GetHostLinux: Could not get public IP: {ipEx.Message}"); // Error log
+                        Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Could not get public IP: {ipEx.Message}"); // Error log
                         host.Ip = "N/A"; // Indicate failure
                     }
 
-                    Console.WriteLine("GetHostLinux: Host information gathering complete."); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Host information gathering complete."); // Detailed log
                 }
                 catch (Exception parseEx)
                 {
-                    Console.Error.WriteLine($"GetHostLinux: Unhandled error during parsing bash results: {parseEx.Message}"); // General parsing error log
-                    Console.Error.WriteLine($"GetHostLinux: Raw bash result that caused error:\n{result}"); // Log raw output on error
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Unhandled error during parsing bash results: {parseEx.Message}"); // General parsing error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Raw bash result that caused error:\n{result}"); // Log raw output on error
                     // Some host info fields might remain default empty/zero
                 }
             }
             else
             {
-                Console.Error.WriteLine("GetHostLinux: Failed to get host information from bash commands."); // Bash command failure log
-                                                                                                             // Set host info fields to default empty/zero on total failure
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Failed to get host information from bash commands. Result was empty."); // Bash command failure log
+                                                                                                                                                                         // Set host info fields to default empty/zero on total failure
                 host.Cpu = ""; host.MemTotal = 0; host.SwapTotal = 0; host.BootTime = 0; host.Arch = ""; host.DiskTotal = 0; host.Platform = ""; host.Ip = "N/A";
             }
         }
@@ -743,7 +818,7 @@ namespace Client
 
         private static void GetStatusWindows()
         {
-            Console.WriteLine("GetStatusWindows not fully implemented. Using placeholder values."); // Log incomplete implementation
+            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetStatusWindows not fully implemented. Using placeholder values."); // Log incomplete implementation
             // Implementation for Windows status gathering
             // Needs to gather: CPU usage, Mem Used, Swap Used, Disk Used, Net In/Out Speed/Transfer, Uptime, Load Averages (Win equivalent)
             // This would typically use PerformanceCounter or System.Management
@@ -790,15 +865,14 @@ namespace Client
                 // Dispose previous connection if it exists
                 DisposeConnection();
 
-                Console.WriteLine($"SignalR: Building connection to {_serverUrl}"); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Building connection to {_serverUrl}"); // Detailed log
 
                 _hubConnection = new HubConnectionBuilder()
                     .WithUrl(_serverUrl)
                     // Enable automatic reconnection with default settings
                     // Default delays: 0s, 2s, 10s, 30s, then exponential backoff up to ~3 minutes total before permanent closure
+                    // You can customize this: .WithAutomaticReconnect(new TimeSpan[] { TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15) })
                     .WithAutomaticReconnect()
-                    // Optional: Customize reconnect delays
-                    // .WithAutomaticReconnect(new TimeSpan[] { TimeSpan.Zero, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15) })
                     .Build();
 
                 // Subscribe to connection events
@@ -810,7 +884,7 @@ namespace Client
                 // Use _ to discard the Task, as this is fire-and-forget initialization
                 _ = StartConnectionAsync(_appCancellationToken);
 
-                Console.WriteLine("SignalR: Initialization complete. Starting connection process."); // Detailed log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Initialization complete. Starting connection process."); // Detailed log
             }
 
             /// <summary>
@@ -825,11 +899,11 @@ namespace Client
                 {
                     try
                     {
-                        Console.WriteLine("SignalR: Attempting to start connection..."); // Detailed log
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Attempting to start connection..."); // Detailed log
                         await _hubConnection.StartAsync(cancellationToken);
 
                         // If StartAsync completes without exception, we are connected
-                        Console.WriteLine($"SignalR: Connection started successfully with ID: {_hubConnection.ConnectionId}"); // Success log
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection started successfully with ID: {_hubConnection.ConnectionId}"); // Success log
 
                         // Register the client immediately after connecting (initial or reconnect)
                         await RegisterClientAsync(); // Internal method logs registration status
@@ -840,24 +914,24 @@ namespace Client
                     catch (TaskCanceledException)
                     {
                         // Cancellation requested while StartAsync was running
-                        Console.WriteLine("SignalR: Connection attempt cancelled by token."); // Log cancellation
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection attempt cancelled by token."); // Log cancellation
                         break; // Exit the loop
                     }
                     catch (Exception ex)
                     {
                         // StartAsync failed (e.g., server unavailable, network issue)
-                        Console.Error.WriteLine($"SignalR: Initial connection attempt failed: {ex.Message}"); // Error log
+                        Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Initial connection attempt failed: {ex.Message}"); // Error log
                         // The WithAutomaticReconnect policy handles retries *after* the initial StartAsync succeeds and then drops.
                         // This catch block handles the *initial* StartAsync failure loop.
                         // Add a delay before the next attempt in this initial loop
-                        Console.WriteLine($"SignalR: Retrying initial connection attempt in 5 seconds..."); // Log retry delay
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Retrying initial connection attempt in 5 seconds..."); // Log retry delay
                         try
                         {
                             await Task.Delay(5000, cancellationToken); // Wait 5 seconds before next initial attempt
                         }
                         catch (TaskCanceledException)
                         {
-                            Console.WriteLine("SignalR: Initial connection retry delay cancelled."); // Log cancellation during delay
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Initial connection retry delay cancelled."); // Log cancellation during delay
                             break; // Exit loop if cancelled during delay
                         }
                     }
@@ -865,7 +939,7 @@ namespace Client
 
                 if (_hubConnection.State != HubConnectionState.Connected && !cancellationToken.IsCancellationRequested)
                 {
-                    Console.WriteLine("SignalR: Exited StartConnectionAsync loop without connecting (not cancelled)."); // Log unexpected exit
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Exited StartConnectionAsync loop without connecting (not cancelled)."); // Log unexpected exit
                 }
             }
 
@@ -874,8 +948,8 @@ namespace Client
             /// </summary>
             private Task OnReconnecting(Exception arg)
             {
-                Console.WriteLine($"SignalR: Connection lost. Reconnecting... Reason: {arg?.Message}"); // Detailed log
-                                                                                                        // You might update UI or state to indicate reconnecting
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection lost. Reconnecting... Reason: {arg?.Message}"); // Detailed log
+                                                                                                                                                 // You might update UI or state to indicate reconnecting
                 return Task.CompletedTask; // Return Task.CompletedTask for async event handlers that don't need awaiting
             }
 
@@ -884,17 +958,17 @@ namespace Client
             /// </summary>
             private async Task OnReconnected(string connectionId)
             {
-                Console.WriteLine($"SignalR: Reconnected successfully with new connection ID: {connectionId}"); // Detailed log
-                                                                                                                // It's crucial to re-register the client with the server upon reconnection
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Reconnected successfully with new connection ID: {connectionId}"); // Detailed log
+                                                                                                                                                         // It's crucial to re-register the client with the server upon reconnection
                 try
                 {
                     await RegisterClientAsync(); // Internal method logs registration status
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"SignalR: Error re-registering client after reconnect: {ex.Message}"); // Error log
-                                                                                                                    // Depending on your server logic, failure to re-register might require stronger action.
-                                                                                                                    // For now, we log the error. The connection is technically up.
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Error re-registering client after reconnect: {ex.Message}"); // Error log
+                                                                                                                                                             // Depending on your server logic, failure to re-register might require stronger action.
+                                                                                                                                                             // For now, we log the error. The connection is technically up.
                 }
             }
 
@@ -903,12 +977,12 @@ namespace Client
             /// </summary>
             private Task OnClosed(Exception arg)
             {
-                Console.Error.WriteLine($"SignalR: Connection permanently closed. Reason: {arg?.Message}"); // Critical error log
+                Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection permanently closed. Reason: {arg?.Message}"); // Critical error log
                 // This indicates that automatic reconnect attempts have been exhausted or the connection was explicitly stopped.
                 // At this point, the SignalR HubConnection object is no longer trying to connect.
                 // If you want to attempt to reconnect again after a longer pause, you would call StartConnectionAsync() here.
                 // For this example, we just log and let the application continue (though it won't report).
-                Console.WriteLine("SignalR: Automatic reconnect failed. Client will stop attempting to report status via SignalR."); // Informational log
+                Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Automatic reconnect failed. Client will stop attempting to report status via SignalR."); // Informational log
                 return Task.CompletedTask;
             }
 
@@ -921,20 +995,20 @@ namespace Client
                 // Ensure connection is in the correct state before invoking
                 if (_hubConnection == null || _hubConnection.State != HubConnectionState.Connected)
                 {
-                    Console.WriteLine("SignalR: Skipping registration, connection is not in 'Connected' state."); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Skipping registration, connection is not in 'Connected' state."); // Detailed log
                     return;
                 }
 
                 try
                 {
-                    Console.WriteLine($"SignalR: Invoking 'Register' with UUID: {Program.config.Uuid}"); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Invoking 'Register' with UUID: {Program.config.Uuid}"); // Detailed log
                     // Pass the client's UUID and host information
                     await _hubConnection.InvokeAsync("Register", Program.config.Uuid, Program.host);
-                    Console.WriteLine("SignalR: 'Register' invoked successfully."); // Success log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: 'Register' invoked successfully."); // Success log
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"SignalR: Error invoking 'Register': {ex.Message}"); // Error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Error invoking 'Register': {ex.Message}"); // Error log
                     // This could happen if the connection drops right as we try to send
                     // The automatic reconnect will hopefully pick it up.
                 }
@@ -951,7 +1025,7 @@ namespace Client
                 // Check connection state before attempting to send
                 if (_hubConnection == null || _hubConnection.State != HubConnectionState.Connected)
                 {
-                    // Console.WriteLine("SignalR: Skipping Report, connection not connected."); // Very verbose log
+                    // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Skipping Report, connection not connected."); // Very verbose log
                     return;
                 }
 
@@ -959,11 +1033,11 @@ namespace Client
                 {
                     // Invoke the "Report" method on the server hub
                     await _hubConnection.InvokeAsync("Report", Program.config.Uuid, status);
-                    // Console.WriteLine("SignalR: 'Report' invoked successfully."); // Very verbose success log
+                    // Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: 'Report' invoked successfully."); // Very verbose success log
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine($"SignalR: Error invoking 'Report': {ex.Message}"); // Error log
+                    Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Error invoking 'Report': {ex.Message}"); // Error log
                     // This exception indicates a failure during the send operation.
                     // The automatic reconnect mechanism should handle the underlying connection loss.
                 }
@@ -976,7 +1050,7 @@ namespace Client
             {
                 if (_hubConnection != null)
                 {
-                    Console.WriteLine("SignalR: Starting connection disposal."); // Detailed log
+                    Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Starting connection disposal."); // Detailed log
                     try
                     {
                         // Unsubscribe from events to prevent memory leaks
@@ -985,15 +1059,15 @@ namespace Client
                         _hubConnection.Closed -= OnClosed;
 
                         // Stop the connection gracefully
-                        Console.WriteLine("SignalR: Stopping connection..."); // Detailed log
-                                                                              // Add a timeout for stopping (optional)
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Stopping connection..."); // Detailed log
+                                                                                                                        // Add a timeout for stopping (optional)
                         await _hubConnection.StopAsync(); // StopAsync can take time
 
-                        Console.WriteLine("SignalR: Connection stopped."); // Detailed log
+                        Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection stopped."); // Detailed log
                     }
                     catch (Exception ex)
                     {
-                        Console.Error.WriteLine($"SignalR: Error stopping connection: {ex.Message}"); // Error log
+                        Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Error stopping connection: {ex.Message}"); // Error log
                     }
                     finally
                     {
@@ -1001,11 +1075,11 @@ namespace Client
                         {
                             await _hubConnection.DisposeAsync(); // Use DisposeAsync for async disposal
                             _hubConnection = null;
-                            Console.WriteLine("SignalR: Connection disposed."); // Detailed log
+                            Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Connection disposed."); // Detailed log
                         }
                         catch (Exception ex)
                         {
-                            Console.Error.WriteLine($"SignalR: Error disposing connection: {ex.Message}"); // Error log
+                            Console.Error.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] SignalR: Error disposing connection: {ex.Message}"); // Error log
                         }
                     }
                 }
@@ -1013,6 +1087,8 @@ namespace Client
 
             public void Dispose()
             {
+                // Note: async void Dispose is not ideal. A proper IAsyncDisposable implementation is better.
+                // But for this simple scenario matching the pattern, async void DisposeConnection is called here.
                 DisposeConnection(); // Call the async dispose method
                 GC.SuppressFinalize(this);
             }
