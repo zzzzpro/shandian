@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -778,10 +779,10 @@ namespace Client
                     Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Fetching public IP..."); // Detailed log
                     try
                     {
-                        using (var client = new WebClient())
+                        using (var client = new HttpClient())
                         {
-                            client.Timeout = 5000; // 5 seconds timeout
-                            host.Ip = client.DownloadString("https://api-ipv4.ip.sb/ip").TrimEnd('\n', '\r').Trim();
+                         
+                            host.Ip = client.GetStringAsync("https://api-ipv4.ip.sb/ip").GetAwaiter().GetResult().TrimEnd('\n', '\r').Trim();
                             Console.WriteLine($"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ssZ}] GetHostLinux: Public IP fetched: {host.Ip}"); // Detailed log
                         }
                     }
